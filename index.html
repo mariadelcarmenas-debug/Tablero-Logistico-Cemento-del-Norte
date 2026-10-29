@@ -1,0 +1,783 @@
+<!doctype html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tablero Logístico Cementos del Norte</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+[hidden]{display:none!important}
+/* Concepto: tablero de control de planta sobre fondo de concreto. Tres áreas con color propio (compra, almacén, transporte),
+   semáforo aparte para el estado, captura fija a la derecha y todo recalculado en vivo desde los registros guardados. */
+:root{
+  --bg:#E6E9EC; --panel:#FFFFFF; --panel2:#F2F4F6; --line:#D2D7DD; --fg:#171B20; --muted:#58626E;
+  --ink:#171B20; --on-ink:#FFFFFF;
+  --c-abas:#2563D6; --c-alm:#7C4DDB; --c-tra:#0C8CA0;
+  --ok:#17824A; --warn:#A96A00; --bad:#C23530;
+  --ok-bg:#DFF3E7; --warn-bg:#FAEFD5; --bad-bg:#FBE2E0;
+  --font-d:'Barlow Semi Condensed','Arial Narrow',system-ui,sans-serif;
+  --font-b:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --font-m:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#111418; --panel:#1A1F25; --panel2:#222831; --line:#2E3640; --fg:#E8ECF0; --muted:#98A3AF;
+  --ink:#E8ECF0; --on-ink:#111418;
+  --c-abas:#7BA4FF; --c-alm:#B195FF; --c-tra:#4CC6D8;
+  --ok:#4CC38A; --warn:#E3A93C; --bad:#F2766E;
+  --ok-bg:#163021; --warn-bg:#35290F; --bad-bg:#3A1B19; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111418; --panel:#1A1F25; --panel2:#222831; --line:#2E3640; --fg:#E8ECF0; --muted:#98A3AF;
+  --ink:#E8ECF0; --on-ink:#111418;
+  --c-abas:#7BA4FF; --c-alm:#B195FF; --c-tra:#4CC6D8;
+  --ok:#4CC38A; --warn:#E3A93C; --bad:#F2766E;
+  --ok-bg:#163021; --warn-bg:#35290F; --bad-bg:#3A1B19; color-scheme:dark}
+
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--fg);font:14px/1.45 var(--font-b);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 56px}
+.wrap{max-width:1260px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+h1,h2,h3,p{margin:0}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+
+.top{display:flex;flex-wrap:wrap;gap:14px 24px;align-items:flex-end;justify-content:space-between}
+.eyebrow{font:500 12px/1.3 var(--font-m);letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+h1{font:700 38px/1.05 var(--font-d);letter-spacing:.005em;margin-top:6px;text-wrap:balance}
+.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;background:var(--panel);overflow:hidden}
+.seg button{border:0;background:transparent;padding:8px 13px;cursor:pointer;color:var(--muted);font-weight:500}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--on-ink)}
+.btn{border:1px solid var(--ink);background:var(--ink);color:var(--on-ink);border-radius:8px;padding:8px 14px;cursor:pointer;font-weight:600}
+.btn.ghost{background:transparent;color:var(--fg);border-color:var(--line)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.sm{padding:5px 10px;font-size:12.5px}
+.live{display:flex;align-items:center;gap:8px;color:var(--muted);font:500 12.5px var(--font-m)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.live.on .dot{background:var(--ok);box-shadow:0 0 0 3px var(--ok-bg)}
+
+.flow{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:0;
+  background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.flow li{padding:11px 14px;display:flex;flex-direction:column;gap:2px;min-width:0;position:relative}
+.flow li+li{border-left:1px solid var(--line)}
+.flow b{font:600 11px var(--font-m);color:var(--muted)}
+.fl-t{font:600 15px/1.2 var(--font-d);letter-spacing:.01em}
+.fl-s{font-size:12px;color:var(--muted);line-height:1.3}
+@media(max-width:900px){.flow{grid-template-columns:repeat(2,minmax(0,1fr))}.flow li:nth-child(odd){border-left:0}.flow li:nth-child(n+3){border-top:1px solid var(--line)}}
+
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:20px;align-items:start}
+@media(max-width:1000px){.layout{grid-template-columns:minmax(0,1fr)}}
+main{display:flex;flex-direction:column;gap:18px;min-width:0}
+aside{display:flex;flex-direction:column;gap:14px;min-width:0}
+@media(min-width:1001px){aside{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto;padding-right:2px}}
+
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;min-width:0}
+.panel>h2,.area-h h2{font:700 21px/1.1 var(--font-d);letter-spacing:.01em}
+.note{background:var(--panel);border:1px dashed var(--muted);border-radius:12px;padding:14px 16px;color:var(--muted)}
+.note b{color:var(--fg)}
+
+.area{--ac:var(--c-abas);display:flex;flex-direction:column;gap:10px}
+.area[data-a="alm"]{--ac:var(--c-alm)}
+.area[data-a="tra"]{--ac:var(--c-tra)}
+.area-h{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;border-bottom:2px solid var(--ac);padding-bottom:6px}
+.area-h h2{color:var(--ac)}
+.area-h span{color:var(--muted);font-size:13px}
+.area-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px}
+.kpi,.side{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.kpi-h{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.kpi h3,.side h3{font:600 16px/1.15 var(--font-d);letter-spacing:.01em}
+.kpi-d{font-size:12.5px;color:var(--muted)}
+.kpi-v{display:flex;align-items:baseline;gap:6px;margin-top:2px}
+.num{font:700 44px/1 var(--font-d);font-variant-numeric:tabular-nums;color:var(--fg);padding:0 4px;margin-left:-4px;border-radius:6px}
+.unit{font:500 13px var(--font-m);color:var(--muted)}
+.kpi-m{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font:500 12px var(--font-m);color:var(--muted)}
+.pill{font:600 11.5px/1 var(--font-b);padding:5px 8px;border-radius:99px;white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
+.pill::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.pill.ok,.chip.ok{background:var(--ok-bg);color:var(--ok)}
+.pill.warn,.chip.warn{background:var(--warn-bg);color:var(--warn)}
+.pill.bad,.chip.bad{background:var(--bad-bg);color:var(--bad)}
+.pill.none,.chip.none{background:var(--panel2);color:var(--muted)}
+.chip{font:500 11.5px var(--font-m);padding:3px 7px;border-radius:6px;display:inline-block}
+.flash{animation:flash 1.1s ease-out}
+@keyframes flash{0%{background:var(--ac);color:var(--on-ink)}100%{background:transparent}}
+@media(prefers-reduced-motion:reduce){.flash{animation:none}}
+
+.chart{position:relative;margin-top:4px;min-height:60px}
+.chart svg{display:block;overflow:visible}
+.chart .tgt{stroke:var(--muted);stroke-width:1;stroke-dasharray:4 3}
+.chart .band{fill:var(--ok-bg)}
+.chart .ar{fill:var(--ac);opacity:.12}
+.chart .ln{fill:none;stroke:var(--ac);stroke-width:2.2;stroke-linejoin:round;stroke-linecap:round}
+.chart .pt{fill:var(--panel);stroke:var(--ac);stroke-width:2}
+.chart .pt.last{fill:var(--ac)}
+.chart .tl,.chart .xl{font:500 9.5px var(--font-m);fill:var(--muted)}
+.chart .hv{stroke:var(--ink);stroke-width:1;opacity:.35}
+.tip{position:absolute;top:-6px;transform:translate(-50%,-100%);background:var(--ink);color:var(--on-ink);font:500 11.5px var(--font-m);
+  padding:5px 8px;border-radius:6px;white-space:nowrap;pointer-events:none;z-index:3}
+.chart-empty{font-size:12.5px;color:var(--muted);padding:14px 0}
+
+.side h3{margin-bottom:2px}
+.side .sub{font-size:12.5px;color:var(--muted);margin-bottom:6px}
+.bars{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:11px}
+.b-l{display:flex;justify-content:space-between;gap:8px;font-size:13px}
+.b-v{font:500 12px var(--font-m);color:var(--muted)}
+.track{position:relative;height:9px;border-radius:5px;background:var(--panel2);margin:4px 0 4px;overflow:visible}
+.track i{position:absolute;top:0;bottom:0;left:0;background:var(--ac);border-radius:5px;opacity:.9}
+.track.dv::before{content:"";position:absolute;left:50%;top:-3px;bottom:-3px;width:1px;background:var(--muted)}
+.track.dv i{left:50%;border-radius:0 5px 5px 0}
+.track.dv i.neg{left:auto;right:50%;border-radius:5px 0 0 5px}
+.track u{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink);text-decoration:none}
+.empty{color:var(--muted);font-size:12.5px}
+
+.ana{display:grid;grid-template-columns:118px minmax(0,1fr);gap:6px 14px;padding:12px 0;border-top:1px solid var(--line)}
+.ana:first-of-type{border-top:0}
+.ana .chip{background:transparent;border:1px solid var(--ac);color:var(--ac);font-family:var(--font-b);font-weight:600;align-self:start;text-align:center}
+.ana p{line-height:1.5}
+.ana em{display:block;color:var(--muted);font-style:normal;margin-top:3px}
+.ana .pill{margin-right:8px;vertical-align:1px}
+@media(max-width:560px){.ana{grid-template-columns:minmax(0,1fr)}}
+[data-a="abas"]{--ac:var(--c-abas)}[data-a="alm"]{--ac:var(--c-alm)}[data-a="tra"]{--ac:var(--c-tra)}
+
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 12px}
+.tabs button{border:1px solid var(--line);background:transparent;border-radius:99px;padding:6px 12px;cursor:pointer;color:var(--muted);font-weight:500}
+.tabs button[aria-selected="true"]{background:var(--ink);color:var(--on-ink);border-color:var(--ink)}
+form.f{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.fd{display:flex;flex-direction:column;gap:4px;min-width:0}
+.fd.full{grid-column:1/-1}
+.fd label{font-size:12px;font-weight:600;color:var(--muted)}
+.fd .in{display:flex;align-items:center;border:1px solid var(--line);border-radius:8px;background:var(--panel2);min-width:0}
+.fd .in:focus-within{outline:2px solid var(--ink);outline-offset:1px}
+.fd input,.fd select{border:0;background:transparent;padding:8px 9px;min-width:0;width:100%;outline:none}
+.fd select{cursor:pointer}
+.fd .u{font:500 11px var(--font-m);color:var(--muted);padding-right:9px}
+.fd option{background:var(--panel);color:var(--fg)}
+.f-act{grid-column:1/-1;display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:2px}
+.msg{font-size:13px;min-height:19px}
+.msg.ok{color:var(--ok)}.msg.bad{color:var(--bad)}
+.hint{font-size:12px;color:var(--muted);margin-top:8px}
+details.panel summary{cursor:pointer;font:700 17px var(--font-d);letter-spacing:.01em}
+details.panel[open] summary{margin-bottom:12px}
+body.readonly .btn.write{display:none}
+
+.tablewrap{overflow-x:auto;margin-top:6px}
+table{border-collapse:collapse;width:100%;min-width:620px}
+th{font:600 11.5px var(--font-m);text-transform:uppercase;letter-spacing:.04em;color:var(--muted);text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top;font-size:13px}
+td.d{white-space:nowrap;font-family:var(--font-m);font-size:12.5px}
+td.x{text-align:right;white-space:nowrap}
+.tg{font:600 11px var(--font-b);padding:2px 7px;border-radius:5px;border:1px solid var(--ac);color:var(--ac);white-space:nowrap}
+.ej{font:500 10.5px var(--font-m);color:var(--muted);border:1px dashed var(--muted);padding:1px 5px;border-radius:4px;margin-left:6px}
+.more{display:flex;justify-content:center;margin-top:12px}
+.tools{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+</style>
+</head><body>
+
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <p class="eyebrow" hidden>Cementos del Norte S.A.S. · cemento gris, alta resistencia y blanco</p>
+      <h1>Tablero logístico</h1>
+      <p class="live" id="live" hidden style="margin-top:8px"><span class="dot"></span><span id="liveTxt">Conectando con los registros…</span></p>
+    </div>
+    <div class="controls">
+      <div class="seg" role="group" aria-label="Periodo">
+        <button type="button" data-p="all" aria-pressed="true">Todo</button>
+        <button type="button" data-p="30" aria-pressed="false">30 días</button>
+        <button type="button" data-p="7" aria-pressed="false">7 días</button>
+      </div>
+      <button type="button" class="btn ghost" id="btnGo">Registrar un dato</button>
+      <button type="button" class="btn" id="btnRep">Descargar reporte</button>
+    </div>
+  </header>
+
+  <ol class="flow" aria-label="Ruta del dato" hidden>
+    <li><b>1</b><span class="fl-t">Diseño de KPI</span><span class="fl-s">6 indicadores con meta</span></li>
+    <li><b>2</b><span class="fl-t">Captura</span><span class="fl-s">Formularios de compra, almacén y despacho</span></li>
+    <li><b>3</b><span class="fl-t">Procesamiento</span><span class="fl-s">Validación y cálculo al guardar</span></li>
+    <li><b>4</b><span class="fl-t">Medición y acumulación</span><span class="fl-s" id="flowN">0 registros guardados</span></li>
+    <li><b>5</b><span class="fl-t">Análisis</span><span class="fl-s">Semáforos, tendencias y lectura</span></li>
+    <li><b>6</b><span class="fl-t">Reporte</span><span class="fl-s">Descarga en CSV</span></li>
+  </ol>
+
+  <div class="layout">
+    <main>
+      <div class="note" id="empty" hidden><b>Todavía no hay registros.</b> Usa el formulario de captura para cargar la primera compra, el primer conteo o el primer despacho; los seis indicadores se calculan solos.</div>
+      <section class="area" data-a="abas" id="area-abas" aria-label="Abastecimiento"></section>
+      <section class="area" data-a="alm" id="area-alm" aria-label="Almacenamiento"></section>
+      <section class="area" data-a="tra" id="area-tra" aria-label="Transporte"></section>
+
+      <section class="panel" id="analisis">
+        <h2>Análisis</h2>
+        <div id="anaList"></div>
+      </section>
+
+      <section class="panel" id="registros">
+        <h2>Registros acumulados</h2>
+        <div class="tabs" role="tablist" aria-label="Tipo de registro" id="tblTabs">
+          <button type="button" role="tab" data-t="todos" aria-selected="true">Todos</button>
+          <button type="button" role="tab" data-t="compra" aria-selected="false">Compras</button>
+          <button type="button" role="tab" data-t="almacen" aria-selected="false">Almacén</button>
+          <button type="button" role="tab" data-t="transporte" aria-selected="false">Despachos</button>
+        </div>
+        <div class="tablewrap"><table><thead><tr><th>Fecha</th><th>Área</th><th>Detalle</th><th>Resultado</th><th></th></tr></thead><tbody id="tbody"></tbody></table></div>
+        <div class="more" id="moreBox" hidden><button type="button" class="btn ghost sm" id="btnMore">Ver más registros</button></div>
+        <div class="tools"><button type="button" class="btn ghost sm write" id="btnEj" hidden>Quitar los datos de ejemplo</button></div>
+      </section>
+    </main>
+
+    <aside id="captura">
+      <section class="panel">
+        <h2>Captura de datos</h2>
+        <div class="tabs" role="tablist" aria-label="Qué registrar" id="capTabs">
+          <button type="button" role="tab" data-t="compra" aria-selected="true">Compra</button>
+          <button type="button" role="tab" data-t="almacen" aria-selected="false">Almacén</button>
+          <button type="button" role="tab" data-t="transporte" aria-selected="false">Despacho</button>
+        </div>
+        <div id="forms"></div>
+        <p class="msg" id="capMsg" role="status" aria-live="polite"></p>
+        <p class="hint" id="roNote" hidden>Tu acceso es de solo lectura: puedes ver el tablero, pero no registrar datos.</p>
+      </section>
+
+      <details class="panel" id="metasBox">
+        <summary>Metas y capacidad</summary>
+        <form class="f" id="metasForm"></form>
+        <p class="msg" id="metaMsg" role="status" aria-live="polite"></p>
+      </details>
+    </aside>
+  </div>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+/* ---------- constantes y utilidades ---------- */
+var DEF={otif:95,costoC:520000,ocMin:80,ocMax:95,exact:98,otd:95,costoT:65000,cap:900};
+var NF0=new Intl.NumberFormat('es-CO',{maximumFractionDigits:0});
+var NF1=new Intl.NumberFormat('es-CO',{minimumFractionDigits:1,maximumFractionDigits:1});
+function pct(v){return NF1.format(v);}
+function cop(v){return '$ '+NF0.format(Math.round(v));}
+function $(s,r){return (r||document).querySelector(s);}
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function pad(n){return String(n).padStart(2,'0');}
+function todayStr(){var t=new Date();return t.getFullYear()+'-'+pad(t.getMonth()+1)+'-'+pad(t.getDate());}
+function D(s){return new Date(s+'T12:00:00Z');}
+function iso(dt){return dt.toISOString().slice(0,10);}
+function addDays(s,n){var dt=D(s);dt.setUTCDate(dt.getUTCDate()+n);return iso(dt);}
+function weekStart(s){var dt=D(s);dt.setUTCDate(dt.getUTCDate()-((dt.getUTCDay()+6)%7));return iso(dt);}
+function fmtD(s,y){return D(s).toLocaleDateString('es-CO',y?{day:'numeric',month:'short',year:'numeric',timeZone:'UTC'}:{day:'numeric',month:'short',timeZone:'UTC'});}
+function sum(a,f){return a.reduce(function(s,x){return s+f(x);},0);}
+function groupBy(a,f){var g={};a.forEach(function(x){var k=f(x);(g[k]=g[k]||[]).push(x);});return g;}
+
+var state={recs:[],metas:Object.assign({},DEF),period:'all',tipoTabla:'todos',limit:12,loaded:false,db:null,dl:null,canWrite:null,prev:{},first:true};
+
+/* ---------- procesamiento: campos derivados de cada registro ---------- */
+function derive(r){
+  if(r.tipo==='compra'){
+    var dias=Math.round((D(r.fechaReal)-D(r.fechaPrometida))/864e5);
+    var aT=dias<=0, comp=r.recibidas>=0.98*r.pedidas;
+    return {diasRetraso:Math.max(dias,0),aTiempo:aT,completa:comp,cumple:aT&&comp,costoTotal:Math.round(r.recibidas*r.precio)};
+  }
+  if(r.tipo==='almacen'){
+    var cap=r.capacidad||state.metas.cap;
+    var dif=r.contados-r.sistema;
+    return {ocupacion:Math.round(1000*r.ocupadas/cap)/10,diferencia:dif,exactitud:r.sistema>0?Math.round(1000*(1-Math.abs(dif)/r.sistema))/10:100};
+  }
+  if(r.tipo==='transporte'){return {costoPorT:Math.round(r.flete/r.toneladas)};}
+  return {};
+}
+
+/* ---------- los seis KPI ---------- */
+function latest(rs){return rs.slice().sort(function(a,b){return a.fecha<b.fecha?1:a.fecha>b.fecha?-1:(b.creado||0)-(a.creado||0);})[0];}
+var KPIS=[
+ {id:'otif',a:'abas',tipo:'compra',name:'Cumplimiento del proveedor',def:'Órdenes entregadas a tiempo y completas',dir:'min',unit:'%',
+  big:pct,fmt:function(v){return pct(v)+' %';},target:function(m){return m.otif;},metaTxt:function(m){return 'Meta ≥ '+pct(m.otif)+' %';},
+  sub:function(rs){return rs.length+(rs.length===1?' orden':' órdenes');},
+  calc:function(rs){return rs.length?100*rs.filter(function(r){return derive(r).cumple;}).length/rs.length:null;}},
+ {id:'costoC',a:'abas',tipo:'compra',name:'Costo de compra por tonelada',def:'Promedio ponderado por toneladas recibidas',dir:'max',unit:'COP / t',
+  big:function(v){return NF0.format(Math.round(v));},fmt:cop,target:function(m){return m.costoC;},metaTxt:function(m){return 'Meta ≤ '+cop(m.costoC);},
+  sub:function(rs){return NF0.format(sum(rs,function(r){return r.recibidas;}))+' t recibidas';},
+  calc:function(rs){var t=sum(rs,function(r){return r.recibidas;});return t>0?sum(rs,function(r){return r.recibidas*r.precio;})/t:null;}},
+ {id:'ocup',a:'alm',tipo:'almacen',name:'Ocupación del almacén',def:'Posiciones ocupadas sobre la capacidad',dir:'band',unit:'%',
+  big:pct,fmt:function(v){return pct(v)+' %';},target:function(m){return null;},metaTxt:function(m){return 'Zona objetivo '+m.ocMin+'–'+m.ocMax+' %';},
+  sub:function(rs){var l=latest(rs);return l?'Conteo del '+fmtD(l.fecha):'';},
+  calc:function(rs){var l=latest(rs);return l?derive(l).ocupacion:null;}},
+ {id:'exact',a:'alm',tipo:'almacen',name:'Exactitud del inventario',def:'Pallets contados frente a los del sistema',dir:'min',unit:'%',
+  big:pct,fmt:function(v){return pct(v)+' %';},target:function(m){return m.exact;},metaTxt:function(m){return 'Meta ≥ '+pct(m.exact)+' %';},
+  sub:function(rs){return rs.length+(rs.length===1?' conteo':' conteos');},
+  calc:function(rs){var s=sum(rs,function(r){return r.sistema;});return s>0?100*(1-sum(rs,function(r){return Math.abs(r.contados-r.sistema);})/s):null;}},
+ {id:'otd',a:'tra',tipo:'transporte',name:'Entregas a tiempo',def:'Despachos que llegaron en la hora acordada',dir:'min',unit:'%',
+  big:pct,fmt:function(v){return pct(v)+' %';},target:function(m){return m.otd;},metaTxt:function(m){return 'Meta ≥ '+pct(m.otd)+' %';},
+  sub:function(rs){return rs.length+(rs.length===1?' despacho':' despachos');},
+  calc:function(rs){return rs.length?100*rs.filter(function(r){return r.aTiempo;}).length/rs.length:null;}},
+ {id:'costoT',a:'tra',tipo:'transporte',name:'Costo de transporte por tonelada',def:'Fletes pagados sobre toneladas despachadas',dir:'max',unit:'COP / t',
+  big:function(v){return NF0.format(Math.round(v));},fmt:cop,target:function(m){return m.costoT;},metaTxt:function(m){return 'Meta ≤ '+cop(m.costoT);},
+  sub:function(rs){return NF0.format(sum(rs,function(r){return r.toneladas;}))+' t despachadas';},
+  calc:function(rs){var t=sum(rs,function(r){return r.toneladas;});return t>0?sum(rs,function(r){return r.flete;})/t:null;}}
+];
+var AREAS=[
+ {id:'abas',name:'Abastecimiento',sub:'Compra de cemento a proveedores'},
+ {id:'alm',name:'Almacenamiento',sub:'Ocupación y control del inventario'},
+ {id:'tra',name:'Transporte',sub:'Despachos a obras y clientes'}
+];
+var STL={ok:'Cumple',warn:'Atención',bad:'Fuera de meta',none:'Sin datos'};
+function stat(k,v,m){
+  if(v==null)return 'none';
+  if(k.dir==='min'){var t=k.target(m);return v>=t?'ok':v>=t*0.97?'warn':'bad';}
+  if(k.dir==='max'){var t2=k.target(m);return v<=t2?'ok':v<=t2*1.05?'warn':'bad';}
+  return (v>=m.ocMin&&v<=m.ocMax)?'ok':(v>=m.ocMin-5&&v<=m.ocMax+3)?'warn':'bad';
+}
+function inPeriod(r){
+  if(state.period==='all')return true;
+  return r.fecha>=addDays(todayStr(),-Number(state.period)+1);
+}
+function weekly(rs,calc){
+  var g=groupBy(rs,function(r){return weekStart(r.fecha);});
+  return Object.keys(g).sort().slice(-10).map(function(k){var v=calc(g[k]);return v==null?null:{k:k,label:fmtD(k),v:v,n:g[k].length};}).filter(Boolean);
+}
+
+/* ---------- gráfico de línea (SVG propio) ---------- */
+function lineChart(host,pts,k,m){
+  if(!pts.length){host.innerHTML='<p class="chart-empty">Sin registros en este periodo.</p>';return;}
+  var W=300,H=118,L=8,R=8,T=12,B=20;
+  var tg=k.target(m), band=k.dir==='band'?[m.ocMin,m.ocMax]:null;
+  var vals=pts.map(function(p){return p.v;}), ref=[];
+  if(tg!=null)ref.push(tg); if(band)ref.push(band[0],band[1]);
+  var lo=Math.min.apply(null,vals.concat(ref)), hi=Math.max.apply(null,vals.concat(ref));
+  if(hi===lo){hi+=1;lo-=1;} var pd=(hi-lo)*0.14; lo-=pd; hi+=pd;
+  function X(i){return pts.length===1?W/2:L+(W-L-R)*i/(pts.length-1);}
+  function Y(v){return T+(H-T-B)*(1-(v-lo)/(hi-lo));}
+  var s='<svg viewBox="0 0 '+W+' '+H+'" width="100%" role="img" aria-label="Tendencia semanal de '+esc(k.name)+'">';
+  if(band)s+='<rect class="band" x="'+L+'" y="'+Y(band[1]).toFixed(1)+'" width="'+(W-L-R)+'" height="'+(Y(band[0])-Y(band[1])).toFixed(1)+'"/>';
+  if(tg!=null)s+='<line class="tgt" x1="'+L+'" x2="'+(W-R)+'" y1="'+Y(tg).toFixed(1)+'" y2="'+Y(tg).toFixed(1)+'"/><text class="tl" x="'+(W-R)+'" y="'+(Y(tg)-3).toFixed(1)+'" text-anchor="end">meta</text>';
+  if(pts.length>1){
+    var line=pts.map(function(p,i){return (i?'L':'M')+X(i).toFixed(1)+' '+Y(p.v).toFixed(1);}).join(' ');
+    s+='<path class="ar" d="'+line+' L'+X(pts.length-1).toFixed(1)+' '+(H-B)+' L'+X(0).toFixed(1)+' '+(H-B)+' Z"/><path class="ln" d="'+line+'"/>';
+  }
+  pts.forEach(function(p,i){s+='<circle class="pt'+(i===pts.length-1?' last':'')+'" cx="'+X(i).toFixed(1)+'" cy="'+Y(p.v).toFixed(1)+'" r="'+(i===pts.length-1?4.5:3)+'"/>';});
+  s+='<text class="xl" x="'+L+'" y="'+(H-4)+'">'+esc(pts[0].label)+'</text>';
+  if(pts.length>1)s+='<text class="xl" x="'+(W-R)+'" y="'+(H-4)+'" text-anchor="end">'+esc(pts[pts.length-1].label)+'</text>';
+  s+='<line class="hv" y1="'+T+'" y2="'+(H-B)+'" x1="0" x2="0" visibility="hidden"/></svg><div class="tip" hidden></div>';
+  host.innerHTML=s;
+  var svg=host.querySelector('svg'), tip=host.querySelector('.tip'), hv=host.querySelector('.hv');
+  function show(ev){
+    var r=svg.getBoundingClientRect(); var fx=(ev.clientX-r.left)/r.width*W; var best=0,bd=1e9;
+    pts.forEach(function(p,i){var d=Math.abs(X(i)-fx);if(d<bd){bd=d;best=i;}});
+    var p=pts[best]; tip.hidden=false;
+    tip.textContent='Semana del '+p.label+': '+k.fmt(p.v)+' · '+p.n+(p.n===1?' registro':' registros');
+    var left=X(best)/W*r.width; var tw=tip.offsetWidth; left=Math.max(tw/2,Math.min(r.width-tw/2,left));
+    tip.style.left=left+'px'; hv.setAttribute('x1',X(best)); hv.setAttribute('x2',X(best)); hv.setAttribute('visibility','visible');
+  }
+  function hide(){tip.hidden=true;hv.setAttribute('visibility','hidden');}
+  svg.addEventListener('pointermove',show); svg.addEventListener('pointerdown',show); svg.addEventListener('pointerleave',hide);
+}
+
+/* ---------- tarjetas por área ---------- */
+function sideAbas(C,m){
+  var g=groupBy(C,function(r){return r.proveedor;}), names=Object.keys(g);
+  var h='<h3>Toneladas recibidas por proveedor</h3><p class="sub">Con su cumplimiento de plazo y cantidad</p>';
+  if(!names.length)return h+'<p class="empty">Sin compras en este periodo.</p>';
+  var rows=names.map(function(n){var rr=g[n];return {n:n,t:sum(rr,function(r){return r.recibidas;}),p:100*rr.filter(function(r){return derive(r).cumple;}).length/rr.length};}).sort(function(a,b){return b.t-a.t;});
+  var mx=Math.max.apply(null,rows.map(function(r){return r.t;}));
+  var k0=KPIS[0];
+  return h+'<ul class="bars">'+rows.map(function(r){
+    return '<li><div class="b-l"><span>'+esc(r.n)+'</span><span class="b-v">'+NF0.format(r.t)+' t</span></div><div class="track"><i style="width:'+(100*r.t/mx).toFixed(0)+'%"></i></div><span class="chip '+stat(k0,r.p,m)+'">'+pct(r.p)+' % a tiempo y completas</span></li>';
+  }).join('')+'</ul>';
+}
+function sideAlm(A,m){
+  var h='<h3>Diferencia de inventario por conteo</h3><p class="sub">Pallets contados menos pallets del sistema</p>';
+  if(!A.length)return h+'<p class="empty">Sin conteos en este periodo.</p>';
+  var last=A.slice().sort(function(a,b){return a.fecha<b.fecha?1:a.fecha>b.fecha?-1:(b.creado||0)-(a.creado||0);}).slice(0,6);
+  var mx=Math.max(10,Math.max.apply(null,last.map(function(r){return Math.abs(derive(r).diferencia);})));
+  var k=KPIS[3];
+  return h+'<ul class="bars">'+last.map(function(r){
+    var d=derive(r), neg=d.diferencia<0, w=(50*Math.abs(d.diferencia)/mx).toFixed(1);
+    return '<li><div class="b-l"><span>'+fmtD(r.fecha)+'</span><span class="b-v">'+(d.diferencia>0?'+':'')+NF0.format(d.diferencia)+' pallets</span></div><div class="track dv"><i class="'+(neg?'neg':'')+'" style="width:'+w+'%"></i></div><span class="chip '+stat(k,d.exactitud,m)+'">exactitud '+pct(d.exactitud)+' %</span></li>';
+  }).join('')+'</ul>';
+}
+function sideTra(T,m){
+  var g=groupBy(T,function(r){return r.ruta;}), names=Object.keys(g).sort();
+  var h='<h3>Costo por tonelada, por ruta</h3><p class="sub">La marca vertical es la meta</p>';
+  if(!names.length)return h+'<p class="empty">Sin despachos en este periodo.</p>';
+  var rows=names.map(function(n){var rr=g[n];var t=sum(rr,function(r){return r.toneladas;});return {n:n,c:sum(rr,function(r){return r.flete;})/t,p:100*rr.filter(function(r){return r.aTiempo;}).length/rr.length,t:t};});
+  var sc=Math.max(m.costoT*1.25,Math.max.apply(null,rows.map(function(r){return r.c;}))*1.05);
+  var k=KPIS[4];
+  return h+'<ul class="bars">'+rows.map(function(r){
+    return '<li><div class="b-l"><span>'+esc(r.n)+' · '+NF0.format(r.t)+' t</span><span class="b-v">'+cop(r.c)+' / t</span></div><div class="track"><i style="width:'+(100*r.c/sc).toFixed(0)+'%"></i><u style="left:'+(100*m.costoT/sc).toFixed(1)+'%"></u></div><span class="chip '+stat(k,r.p,m)+'">'+pct(r.p)+' % a tiempo</span></li>';
+  }).join('')+'</ul>';
+}
+
+function renderAreas(rs,m){
+  var vis=state.loaded;
+  var by={compra:rs.filter(function(r){return r.tipo==='compra';}),almacen:rs.filter(function(r){return r.tipo==='almacen';}),transporte:rs.filter(function(r){return r.tipo==='transporte';})};
+  AREAS.forEach(function(a){
+    var host=$('#area-'+a.id);
+    var html='<div class="area-h"><h2>'+a.name+'</h2><span>'+a.sub+'</span></div><div class="area-grid">';
+    var ks=KPIS.filter(function(k){return k.a===a.id;}), charts=[];
+    ks.forEach(function(k){
+      var sub=by[k.tipo], v=k.calc(sub), st=stat(k,v,m), txt=v==null?'—':k.big(v);
+      var changed=vis&&!state.first&&state.prev[k.id]!=null&&state.prev[k.id]!==txt;
+      state.prev[k.id]=txt;
+      html+='<article class="kpi"><div class="kpi-h"><h3>'+k.name+'</h3><span class="pill '+st+'">'+STL[st]+'</span></div><p class="kpi-d">'+k.def+'</p>'
+        +'<div class="kpi-v"><span class="num'+(changed?' flash':'')+'">'+txt+'</span><span class="unit">'+k.unit+'</span></div>'
+        +'<p class="kpi-m"><span>'+k.metaTxt(m)+'</span><span>'+(sub.length?esc(k.sub(sub)):'sin registros')+'</span></p><div class="chart" id="ch-'+k.id+'"></div></article>';
+      charts.push({k:k,sub:sub});
+    });
+    var side=a.id==='abas'?sideAbas(by.compra,m):a.id==='alm'?sideAlm(by.almacen,m):sideTra(by.transporte,m);
+    html+='<article class="side">'+side+'</article></div>';
+    host.innerHTML=html;
+    charts.forEach(function(c){lineChart($('#ch-'+c.k.id),weekly(c.sub,c.k.calc),c.k,m);});
+  });
+}
+
+/* ---------- análisis ---------- */
+function worstBy(rs,keyFn,badFn){
+  var g=groupBy(rs,keyFn),w=null;
+  Object.keys(g).forEach(function(n){var bad=g[n].filter(badFn).length;var p=bad/g[n].length;if(bad>0&&(!w||p>w.p))w={n:n,bad:bad,tot:g[n].length,p:p};});
+  return w;
+}
+function buildAnalysis(rs,m){
+  var out=[],K={},S={};
+  KPIS.forEach(function(k){var sub=rs.filter(function(r){return r.tipo===k.tipo;});K[k.id]=k.calc(sub);S[k.id]=stat(k,K[k.id],m);});
+  var C=rs.filter(function(r){return r.tipo==='compra';}),A=rs.filter(function(r){return r.tipo==='almacen';}),T=rs.filter(function(r){return r.tipo==='transporte';});
+  var t;
+  // abastecimiento
+  if(K.otif==null)out.push({a:'abas',s:'none',t:'Todavía no hay órdenes de compra en este periodo.'});
+  else{
+    t='El '+pct(K.otif)+' % de las '+C.length+' órdenes llegó a tiempo y completa; la meta es '+pct(m.otif)+' %.';
+    var w=worstBy(C,function(r){return r.proveedor;},function(r){return !derive(r).cumple;});
+    if(w&&S.otif!=='ok')t+=' '+w.n+' concentra los incumplimientos: '+w.bad+' de '+w.tot+' órdenes.';
+    out.push({a:'abas',s:S.otif,t:t,act:S.otif==='ok'?'':'Acordar plazos con ese proveedor o tener uno alterno para no quedarse sin cemento.'});
+    var gp=groupBy(C,function(r){return r.proveedor;}),best=null;
+    Object.keys(gp).forEach(function(n){var tt=sum(gp[n],function(r){return r.recibidas;});var c=sum(gp[n],function(r){return r.recibidas*r.precio;})/tt;if(!best||c<best.c)best={n:n,c:c};});
+    t='El costo medio de compra es '+cop(K.costoC)+' por tonelada, '+(K.costoC>m.costoC?'por encima':'por debajo')+' de la meta de '+cop(m.costoC)+'.';
+    if(best&&Object.keys(gp).length>1)t+=' El proveedor más barato es '+best.n+' ('+cop(best.c)+').';
+    out.push({a:'abas',s:S.costoC,t:t,act:S.costoC==='ok'?'':'Pasar más volumen al proveedor de menor costo y renegociar el precio con los demás.'});
+  }
+  // almacenamiento
+  if(K.ocup==null)out.push({a:'alm',s:'none',t:'Todavía no hay conteos de almacén en este periodo.'});
+  else{
+    var l=latest(A);
+    t='La ocupación es '+pct(K.ocup)+' % ('+fmtD(l.fecha)+'), '+(S.ocup==='ok'?'dentro de':K.ocup>m.ocMax?'por encima de':'por debajo de')+' la zona objetivo de '+m.ocMin+'–'+m.ocMax+' %.';
+    out.push({a:'alm',s:S.ocup,t:t,act:S.ocup==='ok'?'':K.ocup>m.ocMax?'Despachar primero los carriles más antiguos (FIFO) y frenar compras hasta bajar de ese nivel.':'Hay espacio sin uso: consolidar carriles o ajustar el volumen de compra.'});
+    var big=A.slice().sort(function(a,b){return Math.abs(derive(b).diferencia)-Math.abs(derive(a).diferencia);})[0];
+    var bd=derive(big).diferencia;
+    t='La exactitud del inventario es '+pct(K.exact)+' % (meta '+pct(m.exact)+' %). La mayor diferencia fue de '+(bd>0?'+':'')+NF0.format(bd)+' pallets el '+fmtD(big.fecha)+'.';
+    out.push({a:'alm',s:S.exact,t:t,act:S.exact==='ok'?'':'Hacer conteo cíclico en los carriles con diferencias y revisar el registro de entradas y salidas.'});
+  }
+  // transporte
+  if(K.otd==null)out.push({a:'tra',s:'none',t:'Todavía no hay despachos en este periodo.'});
+  else{
+    t='El '+pct(K.otd)+' % de los '+T.length+' despachos llegó a tiempo; la meta es '+pct(m.otd)+' %.';
+    var wr=worstBy(T,function(r){return r.ruta;},function(r){return !r.aTiempo;});
+    if(wr&&S.otd!=='ok')t+=' La ruta con más demoras es '+wr.n+' ('+wr.bad+' de '+wr.tot+' despachos).';
+    out.push({a:'tra',s:S.otd,t:t,act:S.otd==='ok'?'':'Revisar la hora de salida y el tiempo de cargue de esa ruta antes de cambiar de transportador.'});
+    var gr=groupBy(T,function(r){return r.ruta;}),ex=null;
+    Object.keys(gr).forEach(function(n){var c=sum(gr[n],function(r){return r.flete;})/sum(gr[n],function(r){return r.toneladas;});if(!ex||c>ex.c)ex={n:n,c:c};});
+    t='El costo medio de transporte es '+cop(K.costoT)+' por tonelada, '+(K.costoT>m.costoT?'por encima':'por debajo')+' de la meta de '+cop(m.costoT)+'.';
+    if(ex&&Object.keys(gr).length>1)t+=' La ruta más cara es '+ex.n+' ('+cop(ex.c)+' / t).';
+    out.push({a:'tra',s:S.costoT,t:t,act:S.costoT==='ok'?'':'Cargar los camiones al máximo de su capacidad y agrupar entregas de esa ruta.'});
+  }
+  return out;
+}
+var AN={abas:'Abastecimiento',alm:'Almacenamiento',tra:'Transporte'};
+function renderAnalysis(rs,m){
+  $('#anaList').innerHTML=buildAnalysis(rs,m).map(function(x){
+    return '<div class="ana" data-a="'+x.a+'"><span class="chip">'+AN[x.a]+'</span><p><span class="pill '+x.s+'">'+STL[x.s]+'</span>'+esc(x.t)+(x.act?'<em>Qué hacer: '+esc(x.act)+'</em>':'')+'</p></div>';
+  }).join('');
+}
+
+/* ---------- tabla de registros ---------- */
+var TAGN={compra:'Abastecimiento',almacen:'Almacenamiento',transporte:'Transporte'};
+var TAGA={compra:'abas',almacen:'alm',transporte:'tra'};
+function detail(r){
+  var d=derive(r);
+  if(r.tipo==='compra')return {a:esc(r.proveedor)+' · '+esc(r.cemento)+' · '+NF0.format(r.recibidas)+' de '+NF0.format(r.pedidas)+' t · '+cop(r.precio)+' / t',
+    b:d.cumple?'A tiempo y completa':(d.diasRetraso>0?d.diasRetraso+(d.diasRetraso===1?' día':' días')+' de retraso':'A tiempo')+(d.completa?'':' · incompleta')};
+  if(r.tipo==='almacen')return {a:NF0.format(r.ocupadas)+' de '+NF0.format(r.capacidad||state.metas.cap)+' posiciones · sistema '+NF0.format(r.sistema)+' y contados '+NF0.format(r.contados)+' pallets',
+    b:'Ocupación '+pct(d.ocupacion)+' % · exactitud '+pct(d.exactitud)+' %'};
+  return {a:esc(r.ruta)+' · '+NF0.format(r.toneladas)+' t · flete '+cop(r.flete),b:(r.aTiempo?'A tiempo':'Tarde')+' · '+cop(d.costoPorT)+' / t'};
+}
+var delArm=null;
+function renderTable(){
+  var rs=state.recs.filter(function(r){return state.tipoTabla==='todos'||r.tipo===state.tipoTabla;}).sort(function(a,b){return a.fecha<b.fecha?1:a.fecha>b.fecha?-1:(b.creado||0)-(a.creado||0);});
+  var shown=rs.slice(0,state.limit);
+  $('#tbody').innerHTML=shown.length?shown.map(function(r){
+    var d=detail(r);
+    return '<tr data-a="'+TAGA[r.tipo]+'"><td class="d">'+fmtD(r.fecha,true)+'</td><td><span class="tg">'+TAGN[r.tipo]+'</span></td><td>'+d.a+(r.ejemplo?'<span class="ej">ejemplo</span>':'')+'</td><td>'+d.b+'</td><td class="x"><button type="button" class="btn ghost sm write" data-del="'+esc(r.id)+'">Borrar</button></td></tr>';
+  }).join(''):'<tr><td colspan="5" class="empty">No hay registros de este tipo todavía.</td></tr>';
+  $('#moreBox').hidden=rs.length<=state.limit;
+  $('#btnEj').hidden=!state.recs.some(function(r){return r.ejemplo;});
+}
+
+/* ---------- render general ---------- */
+var raf=0;
+function render(){ if(raf)return; raf=requestAnimationFrame(function(){raf=0;doRender();}); }
+function doRender(){
+  var m=state.metas, rs=state.recs.filter(inPeriod);
+  renderAreas(rs,m); renderAnalysis(rs,m); renderTable();
+  $('#empty').hidden=!(state.loaded&&state.recs.length===0);
+  $('#flowN').textContent=NF0.format(state.recs.length)+(state.recs.length===1?' registro guardado':' registros guardados');
+  if(state.loaded){state.first=false;}
+}
+function setLive(on,txt){var l=$('#live');l.classList.toggle('on',on);$('#liveTxt').textContent=txt;}
+function liveText(){setLive(true,(state.local?'Modo local · ':'En vivo · ')+NF0.format(state.recs.length)+(state.recs.length===1?' registro':' registros'));}
+
+/* ---------- captura ---------- */
+var PROVS=['Cementera Andina','Cementos del Oriente','Distribuidora Nororiental'];
+var FORMS={
+ compra:[
+  {k:'proveedor',l:'Proveedor',t:'text',full:1,list:1,ph:'Nombre del proveedor'},
+  {k:'cemento',l:'Tipo de cemento',t:'select',o:['Gris uso general','Alta resistencia','Blanco']},
+  {k:'precio',l:'Precio por tonelada',t:'number',u:'COP',ph:'520000'},
+  {k:'pedidas',l:'Toneladas pedidas',t:'number',u:'t',ph:'90'},
+  {k:'recibidas',l:'Toneladas recibidas',t:'number',u:'t',ph:'90'},
+  {k:'fechaPrometida',l:'Fecha prometida',t:'date'},
+  {k:'fechaReal',l:'Fecha de entrega',t:'date'}],
+ almacen:[
+  {k:'fecha',l:'Fecha del conteo',t:'date',full:1},
+  {k:'ocupadas',l:'Posiciones ocupadas',t:'number',u:'pos.',ph:'828',int:1},
+  {k:'sistema',l:'Pallets en el sistema',t:'number',u:'pallets',ph:'1656',int:1},
+  {k:'contados',l:'Pallets contados',t:'number',u:'pallets',ph:'1650',int:1,zero:1}],
+ transporte:[
+  {k:'fecha',l:'Fecha del despacho',t:'date'},
+  {k:'ruta',l:'Ruta',t:'select',o:['Ruta 1','Ruta 2','Ruta 3']},
+  {k:'toneladas',l:'Toneladas despachadas',t:'number',u:'t',ph:'30'},
+  {k:'flete',l:'Costo del flete',t:'number',u:'COP',ph:'1950000'},
+  {k:'aTiempo',l:'¿Llegó a tiempo?',t:'select',o:['Sí','No'],full:1}]
+};
+var TITL={compra:'Registrar compra recibida',almacen:'Registrar conteo de almacén',transporte:'Registrar despacho'};
+var curTab='compra';
+function buildForms(){
+  var html='<datalist id="provs">'+PROVS.map(function(p){return '<option value="'+esc(p)+'">';}).join('')+'</datalist>';
+  Object.keys(FORMS).forEach(function(t){
+    html+='<form class="f" id="form-'+t+'" data-t="'+t+'" novalidate'+(t===curTab?'':' hidden')+'>';
+    FORMS[t].forEach(function(f){
+      var id='f-'+t+'-'+f.k;
+      html+='<div class="fd'+(f.full?' full':'')+'"><label for="'+id+'">'+f.l+'</label><div class="in">';
+      if(f.t==='select')html+='<select id="'+id+'">'+f.o.map(function(o){return '<option>'+o+'</option>';}).join('')+'</select>';
+      else html+='<input id="'+id+'" type="'+f.t+'"'+(f.t==='number'?' inputmode="decimal" step="any" min="0"':'')+(f.ph?' placeholder="'+f.ph+'"':'')+(f.list?' list="provs" autocomplete="off"':'')+'>';
+      if(f.u)html+='<span class="u">'+f.u+'</span>';
+      html+='</div></div>';
+    });
+    html+='<div class="f-act"><button type="submit" class="btn write">'+TITL[t]+'</button></div></form>';
+  });
+  $('#forms').innerHTML=html;
+  var td=todayStr();
+  ['compra-fechaPrometida','compra-fechaReal','almacen-fecha','transporte-fecha'].forEach(function(id){$('#f-'+id).value=td;});
+  Array.prototype.forEach.call(document.querySelectorAll('form.f[data-t]'),function(f){
+    f.addEventListener('submit',function(ev){ev.preventDefault();submit(f.dataset.t);});
+  });
+}
+var msgT=0;
+function say(el,text,kind){el.textContent=text;el.className='msg '+(kind||'');clearTimeout(msgT);if(text)msgT=setTimeout(function(){el.textContent='';el.className='msg';},6000);}
+async function submit(tipo){
+  var out=$('#capMsg');
+  if(!state.db){say(out,'No hay conexión con la base de datos; el registro no se guardó.','bad');return;}
+  var rec={tipo:tipo},errs=[];
+  FORMS[tipo].forEach(function(f){
+    var el=$('#f-'+tipo+'-'+f.k), raw=el.value.trim();
+    if(f.t==='number'){
+      var v=Number(raw.replace(',','.'));
+      if(raw===''||!isFinite(v)||(f.zero?v<0:v<=0))errs.push(f.l+': escribe un número'+(f.zero?'':' mayor que 0'));
+      else if(f.int&&Math.floor(v)!==v)errs.push(f.l+': debe ser un número entero');
+      rec[f.k]=v;
+    }else if(f.t==='date'){if(!raw)errs.push(f.l+': elige una fecha');rec[f.k]=raw;}
+    else if(f.t==='text'){if(!raw)errs.push(f.l+': escríbelo');rec[f.k]=raw;}
+    else rec[f.k]=raw;
+  });
+  if(!errs.length){
+    if(tipo==='compra'){
+      if(rec.recibidas>rec.pedidas*1.2)errs.push('Toneladas recibidas: no puede superar en más de 20 % lo pedido');
+      rec.fecha=rec.fechaReal;
+    }
+    if(tipo==='almacen'){
+      rec.capacidad=state.metas.cap;
+      if(rec.ocupadas>rec.capacidad)errs.push('Posiciones ocupadas: la capacidad es de '+NF0.format(rec.capacidad)+' posiciones');
+    }
+    if(tipo==='transporte')rec.aTiempo=(rec.aTiempo==='Sí');
+  }
+  if(errs.length){say(out,errs[0],'bad');return;}
+  Object.assign(rec,derive(rec),{creado:Date.now()});
+  var btn=$('#form-'+tipo+' button[type=submit]');btn.disabled=true;
+  try{
+    await state.db.collection('registros').add(rec);
+    say(out,'Registro guardado. Los indicadores ya se recalcularon.','ok');
+    FORMS[tipo].forEach(function(f){if(f.t==='number'){$('#f-'+tipo+'-'+f.k).value='';}});
+    $('#f-'+tipo+'-'+FORMS[tipo].filter(function(f){return f.t==='number';})[0].k).focus();
+  }catch(e){
+    say(out,(e&&e.code==='quota_exceeded')?'La base de datos está llena; borra registros antiguos para seguir.':(e&&e.code==='invalid_argument')?'Tu acceso no permite guardar datos en este tablero.':'No se pudo guardar. Intenta de nuevo.','bad');
+  }
+  btn.disabled=false;
+}
+
+/* ---------- metas ---------- */
+var MF=[
+ ['otif','Cumplimiento proveedor mínimo','%'],['costoC','Costo de compra máximo','COP/t'],
+ ['ocMin','Ocupación mínima','%'],['ocMax','Ocupación máxima','%'],['exact','Exactitud mínima','%'],
+ ['otd','Entregas a tiempo mínimo','%'],['costoT','Costo de transporte máximo','COP/t'],['cap','Capacidad del almacén','posiciones']];
+function buildMetas(){
+  $('#metasForm').innerHTML=MF.map(function(f){return '<div class="fd"><label for="m-'+f[0]+'">'+f[1]+'</label><div class="in"><input id="m-'+f[0]+'" type="number" inputmode="decimal" step="any" min="0"><span class="u">'+f[2]+'</span></div></div>';}).join('')
+   +'<div class="f-act"><button type="submit" class="btn write">Guardar metas</button><button type="button" class="btn ghost write" id="metaReset">Restablecer</button></div>';
+  $('#metasForm').addEventListener('submit',function(ev){ev.preventDefault();saveMetas(false);});
+  $('#metaReset').addEventListener('click',function(){saveMetas(true);});
+}
+function fillMetas(){MF.forEach(function(f){var el=$('#m-'+f[0]);if(el&&document.activeElement!==el)el.value=state.metas[f[0]];});}
+async function saveMetas(reset){
+  var out=$('#metaMsg');
+  if(!state.db){say(out,'No hay conexión con la base de datos.','bad');return;}
+  var m={};
+  if(reset)m=Object.assign({},DEF);
+  else{
+    for(var i=0;i<MF.length;i++){var v=Number($('#m-'+MF[i][0]).value);if(!isFinite(v)||v<=0){say(out,MF[i][1]+': escribe un número mayor que 0','bad');return;}m[MF[i][0]]=v;}
+    if(m.ocMin>=m.ocMax){say(out,'La ocupación mínima debe ser menor que la máxima','bad');return;}
+    if(Math.floor(m.cap)!==m.cap){say(out,'La capacidad debe ser un número entero','bad');return;}
+  }
+  try{await state.db.doc('config/metas').set(m);say(out,reset?'Metas restablecidas.':'Metas guardadas. Los semáforos se actualizaron.','ok');}
+  catch(e){say(out,'No se pudieron guardar las metas.','bad');}
+}
+
+/* ---------- reporte CSV ---------- */
+function cell(v){var s=String(v==null?'':v);return /[;"\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}
+function nc(v){return String(v).replace('.',',');}
+function buildCSV(){
+  var rs=state.recs.filter(inPeriod),m=state.metas,rows=[];
+  var per={all:'Todo el historial','30':'Últimos 30 días','7':'Últimos 7 días'}[state.period];
+  rows.push(['Reporte logístico · Cementos del Norte S.A.S.']);rows.push(['Generado',todayStr()]);rows.push(['Periodo',per]);rows.push([]);
+  rows.push(['Indicador','Área','Valor','Unidad','Meta','Estado','Base']);
+  KPIS.forEach(function(k){
+    var sub=rs.filter(function(r){return r.tipo===k.tipo;}),v=k.calc(sub),st=stat(k,v,m);
+    rows.push([k.name,AN[k.a],v==null?'':nc(Math.round(v*10)/10),k.unit,k.metaTxt(m).replace('Meta ','').replace('Zona objetivo ',''),STL[st],sub.length+' registros']);
+  });
+  rows.push([]);rows.push(['Lectura del tablero']);
+  buildAnalysis(rs,m).forEach(function(x){rows.push([AN[x.a],STL[x.s],x.t,x.act||'']);});
+  var cs=rs.filter(function(r){return r.tipo==='compra';}).sort(function(a,b){return a.fecha<b.fecha?-1:1;});
+  rows.push([]);rows.push(['Compras']);rows.push(['Fecha de entrega','Proveedor','Cemento','Pedidas (t)','Recibidas (t)','Fecha prometida','Precio COP/t','Días de retraso','A tiempo y completa']);
+  cs.forEach(function(r){var d=derive(r);rows.push([r.fechaReal,r.proveedor,r.cemento,nc(r.pedidas),nc(r.recibidas),r.fechaPrometida,r.precio,d.diasRetraso,d.cumple?'Sí':'No']);});
+  var as=rs.filter(function(r){return r.tipo==='almacen';}).sort(function(a,b){return a.fecha<b.fecha?-1:1;});
+  rows.push([]);rows.push(['Almacén']);rows.push(['Fecha','Posiciones ocupadas','Capacidad','Ocupación %','Pallets sistema','Pallets contados','Diferencia','Exactitud %']);
+  as.forEach(function(r){var d=derive(r);rows.push([r.fecha,r.ocupadas,r.capacidad||m.cap,nc(d.ocupacion),r.sistema,r.contados,d.diferencia,nc(d.exactitud)]);});
+  var ts=rs.filter(function(r){return r.tipo==='transporte';}).sort(function(a,b){return a.fecha<b.fecha?-1:1;});
+  rows.push([]);rows.push(['Transporte']);rows.push(['Fecha','Ruta','Toneladas','Flete COP','COP/t','A tiempo']);
+  ts.forEach(function(r){rows.push([r.fecha,r.ruta,nc(r.toneladas),r.flete,derive(r).costoPorT,r.aTiempo?'Sí':'No']);});
+  return '﻿'+rows.map(function(r){return r.map(cell).join(';');}).join('\r\n');
+}
+async function report(){
+  if(!state.dl){say($('#capMsg'),'La descarga no está disponible en esta vista.','bad');return;}
+  try{await state.dl.save({filename:'reporte-logistico-cementos-del-norte-'+todayStr()+'.csv',data:buildCSV()});}
+  catch(e){if(e&&e.code!=='declined')say($('#capMsg'),'No se pudo preparar la descarga.','bad');}
+}
+
+/* ---------- eventos ---------- */
+function bindUI(){
+  Array.prototype.forEach.call(document.querySelectorAll('.seg button'),function(b){b.addEventListener('click',function(){
+    state.period=b.dataset.p;Array.prototype.forEach.call(document.querySelectorAll('.seg button'),function(x){x.setAttribute('aria-pressed',x===b?'true':'false');});render();});});
+  $('#capTabs').addEventListener('click',function(ev){var b=ev.target.closest('button');if(!b)return;curTab=b.dataset.t;
+    Array.prototype.forEach.call(document.querySelectorAll('#capTabs button'),function(x){x.setAttribute('aria-selected',x===b?'true':'false');});
+    Object.keys(FORMS).forEach(function(t){$('#form-'+t).hidden=(t!==curTab);});});
+  $('#tblTabs').addEventListener('click',function(ev){var b=ev.target.closest('button');if(!b)return;state.tipoTabla=b.dataset.t;state.limit=12;
+    Array.prototype.forEach.call(document.querySelectorAll('#tblTabs button'),function(x){x.setAttribute('aria-selected',x===b?'true':'false');});renderTable();});
+  $('#btnMore').addEventListener('click',function(){state.limit+=12;renderTable();});
+  $('#btnGo').addEventListener('click',function(){$('#captura').scrollIntoView({behavior:'smooth',block:'start'});var f=$('#form-'+curTab+' input,#form-'+curTab+' select');if(f)f.focus({preventScroll:true});});
+  $('#btnRep').addEventListener('click',report);
+  $('#tbody').addEventListener('click',async function(ev){
+    var b=ev.target.closest('[data-del]');if(!b)return;var id=b.dataset.del;
+    if(delArm!==id){delArm=id;b.textContent='¿Seguro? Borrar';setTimeout(function(){if(delArm===id){delArm=null;if(b.isConnected)b.textContent='Borrar';}},3500);return;}
+    delArm=null;b.disabled=true;
+    try{await state.db.collection('registros').doc(id).delete();}catch(e){b.disabled=false;b.textContent='Borrar';}
+  });
+  $('#btnEj').addEventListener('click',async function(){
+    var b=$('#btnEj');
+    if(b.dataset.arm!=='1'){b.dataset.arm='1';b.textContent='¿Seguro? Quitar ejemplos';setTimeout(function(){b.dataset.arm='0';b.textContent='Quitar los datos de ejemplo';},3500);return;}
+    b.dataset.arm='0';b.disabled=true;b.textContent='Quitando…';
+    var ids=state.recs.filter(function(r){return r.ejemplo;}).map(function(r){return r.id;});
+    try{for(var i=0;i<ids.length;i+=6){await Promise.all(ids.slice(i,i+6).map(function(id){return state.db.collection('registros').doc(id).delete();}));}}catch(e){}
+    b.disabled=false;b.textContent='Quitar los datos de ejemplo';
+  });
+}
+function applyAccess(){
+  var ro=(state.canWrite===false)||!state.db;
+  document.body.classList.toggle('readonly',ro);
+  $('#roNote').hidden=!(state.canWrite===false);
+  Array.prototype.forEach.call(document.querySelectorAll('#forms input,#forms select,#forms button,#metasForm input,#metasForm button'),function(el){el.disabled=ro;});
+  $('#btnRep').hidden=!state.dl;
+}
+
+
+/* ---------- modo local (archivo abierto sin la base de datos) ---------- */
+var SEED=[{"id":"c01","tipo":"compra","fecha":"2026-09-14","proveedor":"Cementera Andina","cemento":"Gris uso general","pedidas":60,"recibidas":60,"fechaPrometida":"2026-09-14","fechaReal":"2026-09-14","precio":507500,"diasRetraso":0,"aTiempo":true,"completa":true,"cumple":true,"costoTotal":30450000,"ejemplo":true,"creado":1790000000000},{"id":"c02","tipo":"compra","fecha":"2026-09-16","proveedor":"Cementos del Oriente","cemento":"Gris uso general","pedidas":60,"recibidas":60,"fechaPrometida":"2026-09-16","fechaReal":"2026-09-16","precio":530000,"diasRetraso":0,"aTiempo":true,"completa":true,"cumple":true,"costoTotal":31800000,"ejemplo":true,"creado":1790000000000},{"id":"c03","tipo":"compra","fecha":"2026-09-19","proveedor":"Distribuidora Nororiental","cemento":"Alta resistencia","pedidas":150,"recibidas":150,"fechaPrometida":"2026-09-19","fechaReal":"2026-09-19","precio":545000,"diasRetraso":0,"aTiempo":true,"completa":true,"cumple":true,"costoTotal":81750000,"ejemplo":true,"creado":1790000000000},{"id":"c04","tipo":"compra","fecha":"2026-09-21","proveedor":"Cementera Andina","cemento":"Blanco","pedidas":150,"recibidas":150,"fechaPrometida":"2026-09-21","fechaReal":"2026-09-21","precio":501000,"diasRetraso":0,"aTiempo":true,"completa":true,"cumple":true,"costoTotal":75150000,"ejemplo":true,"creado":1790000000000},{"id":"c05","tipo":"compra","fecha":"2026-09-24","proveedor":"Distribuidora Nororiental","cemento":"Gris uso general","pedidas":60,"recibidas":54,"fechaPrometida":"2026-09-24","fechaReal":"2026-09-24","precio":546500,"diasRetraso":0,"aTiempo":true,"completa":false,"cumple":false,"costoTotal":29511000,"ejemplo":true,"creado":1790000000000},{"id":"c06","tipo":"compra","fecha":"2026-09-29","proveedor":"Distribuidora Nororiental","cemento":"Gris uso general","pedidas":60,"recibidas":60,"fechaPrometida":"2026-09-26","fechaReal":"2026-09-29","precio":538000,"diasRetraso":3,"aTiempo":false,"completa":true,"cumple":false,"costoTotal":32280000,"ejemplo":true,"creado":1790000000000},{"id":"c07","tipo":"compra","fecha":"2026-09-29","proveedor":"Cementera Andina","cemento":"Alta resistencia","pedidas":90,"recibidas":90,"fechaPrometida":"2026-09-29","fechaReal":"2026-09-29","precio":512000,"diasRetraso":0,"aTiempo":true,"completa":true,"cumple":true,"costoTotal":46080000,"ejemplo":true,"creado":1790000000000},{"id":"c08","tipo":"compra","fecha":"2026-10-01","proveedor":"Cementos del Oriente","cemento":"Blanco","pedidas":120,"recibidas":120,"fechaPrometida":"2026-10-01","fechaReal":"2026-10-01","precio":528500,"diasRetraso":0,"aTiempo":true,"completa":true,"cumple":true,"costoTotal":63420000,"ejemplo":true,"creado":1790000000000},{"id":"c09","tipo":"compra","fecha":"2026-10-04","proveedor":"Cementos del Oriente","cemento":"Gris uso general","pedidas":60,"recibidas":54,"fechaPrometida":"2026-10-04","fechaReal":"2026-10-04","precio":529000,"diasRetraso":0,"aTiempo":true,"completa":false,"cumple":false,"costoTotal":28566000,"ejemplo":true,"creado":1790000000000},{"id":"c10","tipo":"compra","fecha":"2026-10-06","proveedor":"Cementera Andina","cemento":"Gris uso general","pedidas":120,"recibidas":120,"fechaPrometida":"2026-10-06","fechaReal":"2026-10-06","precio":507500,"diasRetraso":0,"aTiempo":true,"completa":true,"cumple":true,"costoTotal":60900000,"ejemplo":true,"creado":1790000000000},{"id":"c11","tipo":"compra","fecha":"2026-10-12","proveedor":"Cementos del Oriente","cemento":"Alta resistencia","pedidas":120,"recibidas":120,"fechaPrometida":"2026-10-09","fechaReal":"2026-10-12","precio":527500,"diasRetraso":3,"aTiempo":false,"completa":true,"cumple":false,"costoTotal":63300000,"ejemplo":true,"creado":1790000000000},{"id":"c12","tipo":"compra","fecha":"2026-10-14","proveedor":"Distribuidora Nororiental","cemento":"Blanco","pedidas":150,"recibidas":150,"fechaPrometida":"2026-10-11","fechaReal":"2026-10-14","precio":547000,"diasRetraso":3,"aTiempo":false,"completa":true,"cumple":false,"costoTotal":82050000,"ejemplo":true,"creado":1790000000000},{"id":"c13","tipo":"compra","fecha":"2026-10-14","proveedor":"Cementera Andina","cemento":"Gris uso general","pedidas":60,"recibidas":60,"fechaPrometida":"2026-10-14","fechaReal":"2026-10-14","precio":511000,"diasRetraso":0,"aTiempo":true,"completa":true,"cumple":true,"costoTotal":30660000,"ejemplo":true,"creado":1790000000000},{"id":"c14","tipo":"compra","fecha":"2026-10-16","proveedor":"Cementos del Oriente","cemento":"Gris uso general","pedidas":150,"recibidas":150,"fechaPrometida":"2026-10-16","fechaReal":"2026-10-16","precio":534000,"diasRetraso":0,"aTiempo":true,"completa":true,"cumple":true,"costoTotal":80100000,"ejemplo":true,"creado":1790000000000},{"id":"c15","tipo":"compra","fecha":"2026-10-19","proveedor":"Distribuidora Nororiental","cemento":"Alta resistencia","pedidas":150,"recibidas":150,"fechaPrometida":"2026-10-19","fechaReal":"2026-10-19","precio":541500,"diasRetraso":0,"aTiempo":true,"completa":true,"cumple":true,"costoTotal":81225000,"ejemplo":true,"creado":1790000000000},{"id":"c16","tipo":"compra","fecha":"2026-10-21","proveedor":"Cementera Andina","cemento":"Blanco","pedidas":60,"recibidas":60,"fechaPrometida":"2026-10-21","fechaReal":"2026-10-21","precio":510500,"diasRetraso":0,"aTiempo":true,"completa":true,"cumple":true,"costoTotal":30630000,"ejemplo":true,"creado":1790000000000},{"id":"c17","tipo":"compra","fecha":"2026-10-24","proveedor":"Distribuidora Nororiental","cemento":"Gris uso general","pedidas":60,"recibidas":60,"fechaPrometida":"2026-10-24","fechaReal":"2026-10-24","precio":544000,"diasRetraso":0,"aTiempo":true,"completa":true,"cumple":true,"costoTotal":32640000,"ejemplo":true,"creado":1790000000000},{"id":"c18","tipo":"compra","fecha":"2026-10-26","proveedor":"Distribuidora Nororiental","cemento":"Gris uso general","pedidas":60,"recibidas":60,"fechaPrometida":"2026-10-26","fechaReal":"2026-10-26","precio":535500,"diasRetraso":0,"aTiempo":true,"completa":true,"cumple":true,"costoTotal":32130000,"ejemplo":true,"creado":1790000000000},{"id":"a01","tipo":"almacen","fecha":"2026-09-14","ocupadas":796,"capacidad":900,"sistema":1592,"contados":1595,"ocupacion":88.4,"diferencia":3,"exactitud":99.8,"ejemplo":true,"creado":1790000000000},{"id":"a02","tipo":"almacen","fecha":"2026-09-16","ocupadas":786,"capacidad":900,"sistema":1572,"contados":1583,"ocupacion":87.3,"diferencia":11,"exactitud":99.3,"ejemplo":true,"creado":1790000000000},{"id":"a03","tipo":"almacen","fecha":"2026-09-18","ocupadas":799,"capacidad":900,"sistema":1598,"contados":1576,"ocupacion":88.8,"diferencia":-22,"exactitud":98.6,"ejemplo":true,"creado":1790000000000},{"id":"a04","tipo":"almacen","fecha":"2026-09-20","ocupadas":794,"capacidad":900,"sistema":1588,"contados":1566,"ocupacion":88.2,"diferencia":-22,"exactitud":98.6,"ejemplo":true,"creado":1790000000000},{"id":"a05","tipo":"almacen","fecha":"2026-09-22","ocupadas":800,"capacidad":900,"sistema":1600,"contados":1591,"ocupacion":88.9,"diferencia":-9,"exactitud":99.4,"ejemplo":true,"creado":1790000000000},{"id":"a06","tipo":"almacen","fecha":"2026-09-24","ocupadas":806,"capacidad":900,"sistema":1612,"contados":1590,"ocupacion":89.6,"diferencia":-22,"exactitud":98.6,"ejemplo":true,"creado":1790000000000},{"id":"a07","tipo":"almacen","fecha":"2026-09-26","ocupadas":806,"capacidad":900,"sistema":1612,"contados":1653,"ocupacion":89.6,"diferencia":41,"exactitud":97.5,"ejemplo":true,"creado":1790000000000},{"id":"a08","tipo":"almacen","fecha":"2026-09-28","ocupadas":806,"capacidad":900,"sistema":1612,"contados":1615,"ocupacion":89.6,"diferencia":3,"exactitud":99.8,"ejemplo":true,"creado":1790000000000},{"id":"a09","tipo":"almacen","fecha":"2026-09-30","ocupadas":804,"capacidad":900,"sistema":1608,"contados":1599,"ocupacion":89.3,"diferencia":-9,"exactitud":99.4,"ejemplo":true,"creado":1790000000000},{"id":"a10","tipo":"almacen","fecha":"2026-10-02","ocupadas":796,"capacidad":900,"sistema":1592,"contados":1592,"ocupacion":88.4,"diferencia":0,"exactitud":100.0,"ejemplo":true,"creado":1790000000000},{"id":"a11","tipo":"almacen","fecha":"2026-10-04","ocupadas":802,"capacidad":900,"sistema":1604,"contados":1621,"ocupacion":89.1,"diferencia":17,"exactitud":98.9,"ejemplo":true,"creado":1790000000000},{"id":"a12","tipo":"almacen","fecha":"2026-10-06","ocupadas":814,"capacidad":900,"sistema":1628,"contados":1606,"ocupacion":90.4,"diferencia":-22,"exactitud":98.6,"ejemplo":true,"creado":1790000000000},{"id":"a13","tipo":"almacen","fecha":"2026-10-08","ocupadas":816,"capacidad":900,"sistema":1632,"contados":1638,"ocupacion":90.7,"diferencia":6,"exactitud":99.6,"ejemplo":true,"creado":1790000000000},{"id":"a14","tipo":"almacen","fecha":"2026-10-10","ocupadas":809,"capacidad":900,"sistema":1618,"contados":1609,"ocupacion":89.9,"diferencia":-9,"exactitud":99.4,"ejemplo":true,"creado":1790000000000},{"id":"a15","tipo":"almacen","fecha":"2026-10-12","ocupadas":820,"capacidad":900,"sistema":1640,"contados":1651,"ocupacion":91.1,"diferencia":11,"exactitud":99.3,"ejemplo":true,"creado":1790000000000},{"id":"a16","tipo":"almacen","fecha":"2026-10-14","ocupadas":822,"capacidad":900,"sistema":1644,"contados":1685,"ocupacion":91.3,"diferencia":41,"exactitud":97.5,"ejemplo":true,"creado":1790000000000},{"id":"a17","tipo":"almacen","fecha":"2026-10-16","ocupadas":821,"capacidad":900,"sistema":1642,"contados":1620,"ocupacion":91.2,"diferencia":-22,"exactitud":98.7,"ejemplo":true,"creado":1790000000000},{"id":"a18","tipo":"almacen","fecha":"2026-10-18","ocupadas":811,"capacidad":900,"sistema":1622,"contados":1613,"ocupacion":90.1,"diferencia":-9,"exactitud":99.4,"ejemplo":true,"creado":1790000000000},{"id":"a19","tipo":"almacen","fecha":"2026-10-20","ocupadas":822,"capacidad":900,"sistema":1644,"contados":1655,"ocupacion":91.3,"diferencia":11,"exactitud":99.3,"ejemplo":true,"creado":1790000000000},{"id":"a20","tipo":"almacen","fecha":"2026-10-22","ocupadas":816,"capacidad":900,"sistema":1632,"contados":1643,"ocupacion":90.7,"diferencia":11,"exactitud":99.3,"ejemplo":true,"creado":1790000000000},{"id":"a21","tipo":"almacen","fecha":"2026-10-24","ocupadas":831,"capacidad":900,"sistema":1662,"contados":1653,"ocupacion":92.3,"diferencia":-9,"exactitud":99.5,"ejemplo":true,"creado":1790000000000},{"id":"a22","tipo":"almacen","fecha":"2026-10-26","ocupadas":831,"capacidad":900,"sistema":1662,"contados":1658,"ocupacion":92.3,"diferencia":-4,"exactitud":99.8,"ejemplo":true,"creado":1790000000000},{"id":"a23","tipo":"almacen","fecha":"2026-10-28","ocupadas":831,"capacidad":900,"sistema":1662,"contados":1673,"ocupacion":92.3,"diferencia":11,"exactitud":99.3,"ejemplo":true,"creado":1790000000000},{"id":"t01","tipo":"transporte","fecha":"2026-09-14","ruta":"Ruta 1","toneladas":26,"flete":1490000,"aTiempo":true,"costoPorT":57308,"ejemplo":true,"creado":1790000000000},{"id":"t02","tipo":"transporte","fecha":"2026-09-15","ruta":"Ruta 2","toneladas":32,"flete":2280000,"aTiempo":true,"costoPorT":71250,"ejemplo":true,"creado":1790000000000},{"id":"t03","tipo":"transporte","fecha":"2026-09-17","ruta":"Ruta 3","toneladas":32,"flete":2010000,"aTiempo":true,"costoPorT":62812,"ejemplo":true,"creado":1790000000000},{"id":"t04","tipo":"transporte","fecha":"2026-09-19","ruta":"Ruta 1","toneladas":26,"flete":1440000,"aTiempo":true,"costoPorT":55385,"ejemplo":true,"creado":1790000000000},{"id":"t05","tipo":"transporte","fecha":"2026-09-21","ruta":"Ruta 2","toneladas":33,"flete":2380000,"aTiempo":false,"costoPorT":72121,"ejemplo":true,"creado":1790000000000},{"id":"t06","tipo":"transporte","fecha":"2026-09-23","ruta":"Ruta 3","toneladas":26,"flete":1660000,"aTiempo":true,"costoPorT":63846,"ejemplo":true,"creado":1790000000000},{"id":"t07","tipo":"transporte","fecha":"2026-09-25","ruta":"Ruta 1","toneladas":28,"flete":1560000,"aTiempo":true,"costoPorT":55714,"ejemplo":true,"creado":1790000000000},{"id":"t08","tipo":"transporte","fecha":"2026-09-26","ruta":"Ruta 2","toneladas":33,"flete":2360000,"aTiempo":true,"costoPorT":71515,"ejemplo":true,"creado":1790000000000},{"id":"t09","tipo":"transporte","fecha":"2026-09-28","ruta":"Ruta 3","toneladas":30,"flete":1880000,"aTiempo":true,"costoPorT":62667,"ejemplo":true,"creado":1790000000000},{"id":"t10","tipo":"transporte","fecha":"2026-09-30","ruta":"Ruta 1","toneladas":33,"flete":1880000,"aTiempo":true,"costoPorT":56970,"ejemplo":true,"creado":1790000000000},{"id":"t11","tipo":"transporte","fecha":"2026-10-02","ruta":"Ruta 2","toneladas":32,"flete":2310000,"aTiempo":true,"costoPorT":72188,"ejemplo":true,"creado":1790000000000},{"id":"t12","tipo":"transporte","fecha":"2026-10-04","ruta":"Ruta 3","toneladas":28,"flete":1780000,"aTiempo":true,"costoPorT":63571,"ejemplo":true,"creado":1790000000000},{"id":"t13","tipo":"transporte","fecha":"2026-10-06","ruta":"Ruta 1","toneladas":33,"flete":1850000,"aTiempo":false,"costoPorT":56061,"ejemplo":true,"creado":1790000000000},{"id":"t14","tipo":"transporte","fecha":"2026-10-08","ruta":"Ruta 2","toneladas":33,"flete":2360000,"aTiempo":true,"costoPorT":71515,"ejemplo":true,"creado":1790000000000},{"id":"t15","tipo":"transporte","fecha":"2026-10-09","ruta":"Ruta 3","toneladas":28,"flete":1750000,"aTiempo":true,"costoPorT":62500,"ejemplo":true,"creado":1790000000000},{"id":"t16","tipo":"transporte","fecha":"2026-10-11","ruta":"Ruta 1","toneladas":33,"flete":1860000,"aTiempo":true,"costoPorT":56364,"ejemplo":true,"creado":1790000000000},{"id":"t17","tipo":"transporte","fecha":"2026-10-13","ruta":"Ruta 2","toneladas":32,"flete":2320000,"aTiempo":true,"costoPorT":72500,"ejemplo":true,"creado":1790000000000},{"id":"t18","tipo":"transporte","fecha":"2026-10-15","ruta":"Ruta 3","toneladas":28,"flete":1770000,"aTiempo":true,"costoPorT":63214,"ejemplo":true,"creado":1790000000000},{"id":"t19","tipo":"transporte","fecha":"2026-10-17","ruta":"Ruta 1","toneladas":26,"flete":1470000,"aTiempo":true,"costoPorT":56538,"ejemplo":true,"creado":1790000000000},{"id":"t20","tipo":"transporte","fecha":"2026-10-19","ruta":"Ruta 2","toneladas":26,"flete":1890000,"aTiempo":true,"costoPorT":72692,"ejemplo":true,"creado":1790000000000},{"id":"t21","tipo":"transporte","fecha":"2026-10-21","ruta":"Ruta 3","toneladas":30,"flete":1930000,"aTiempo":false,"costoPorT":64333,"ejemplo":true,"creado":1790000000000},{"id":"t22","tipo":"transporte","fecha":"2026-10-22","ruta":"Ruta 1","toneladas":26,"flete":1480000,"aTiempo":true,"costoPorT":56923,"ejemplo":true,"creado":1790000000000},{"id":"t23","tipo":"transporte","fecha":"2026-10-24","ruta":"Ruta 2","toneladas":30,"flete":2150000,"aTiempo":true,"costoPorT":71667,"ejemplo":true,"creado":1790000000000},{"id":"t24","tipo":"transporte","fecha":"2026-10-26","ruta":"Ruta 3","toneladas":26,"flete":1650000,"aTiempo":false,"costoPorT":63462,"ejemplo":true,"creado":1790000000000}];
+function makeLocalDb(){
+  var KEY='cementos-norte-tablero-v1',mem=null,subs={};
+  function load(){
+    try{var s=localStorage.getItem(KEY);if(s){var o=JSON.parse(s);if(o&&o.registros)return o;}}catch(e){}
+    return mem;
+  }
+  function save(o){mem=o;try{localStorage.setItem(KEY,JSON.stringify(o));}catch(e){}}
+  var data=load();
+  if(!data){data={registros:{},metas:null};SEED.forEach(function(s){var r=Object.assign({},s);var id=r.id;delete r.id;data.registros[id]=r;});save(data);}
+  mem=data;
+  function snapRegs(){var ids=Object.keys(data.registros);return {docs:ids.map(function(id){return {id:id,data:function(){return data.registros[id];}};})};}
+  function fireRegs(){(subs.registros||[]).forEach(function(cb){cb(snapRegs());});}
+  function fireMetas(){(subs.metas||[]).forEach(function(cb){cb({exists:!!data.metas,data:function(){return data.metas||{};}});});}
+  return {
+    collection:function(){return {
+      add:async function(o){var id='l'+Date.now().toString(36)+Math.random().toString(36).slice(2,5);data.registros[id]=o;save(data);fireRegs();return {id:id};},
+      doc:function(id){return {delete:async function(){delete data.registros[id];save(data);fireRegs();}};},
+      onSnapshot:function(cb){(subs.registros=subs.registros||[]).push(cb);cb(snapRegs());}
+    };},
+    doc:function(){return {
+      set:async function(o){data.metas=o;save(data);fireMetas();},
+      onSnapshot:function(cb){(subs.metas=subs.metas||[]).push(cb);cb({exists:!!data.metas,data:function(){return data.metas||{};}});}
+    };}
+  };
+}
+function makeLocalDl(){
+  return {save:async function(x){
+    var blob=new Blob([x.data],{type:'text/csv;charset=utf-8'});
+    var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=x.filename;
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+    setTimeout(function(){URL.revokeObjectURL(a.href);},2000);
+    return {status:'saved'};
+  }};
+}
+async function startLocal(){
+  state.db=makeLocalDb();state.dl=makeLocalDl();state.canWrite=true;state.local=true;
+  applyAccess();
+  state.db.collection('registros').onSnapshot(function(snap){
+    state.recs=snap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
+    state.loaded=true;liveText();render();
+  });
+  state.db.doc('config/metas').onSnapshot(function(s){
+    state.metas=Object.assign({},DEF,s.exists?s.data():{});fillMetas();render();
+  });
+}
+
+/* ---------- arranque ---------- */
+async function init(){
+  buildForms();buildMetas();fillMetas();bindUI();render();applyAccess();
+  var cl=window.claude;
+  if(!cl||!cl.use){startLocal();return;}
+  var db=null,user=null,dl=null;
+  try{db=await cl.use('db');}catch(e){}
+  try{user=await cl.use('user');}catch(e){}
+  try{dl=await cl.use('downloads');}catch(e){}
+  state.db=db;state.dl=dl;
+  try{state.canWrite=user?user.can('data.write'):null;}catch(e){}
+  applyAccess();
+  if(!db){startLocal();return;}
+  db.collection('registros').onSnapshot(function(snap){
+    state.recs=snap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
+    state.loaded=true;liveText();render();
+  },function(){setLive(false,'Se perdió la conexión con los registros');});
+  db.doc('config/metas').onSnapshot(function(s){
+    state.metas=Object.assign({},DEF,s.exists?s.data():{});fillMetas();render();
+  },function(){});
+}
+init();
+})();
+</script>
+
+</body></html>
